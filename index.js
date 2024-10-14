@@ -32,9 +32,9 @@ const cli = meow(
   }
 );
 
-const { map: mapPath, file } = cli.flags;
+const { map: mapPathFlag, file: fileFlag } = cli.flags;
 
-(async () => {
+const stacktracify = async ({ mapPath, file}) => {
   try {
     console.log(mapPath, file);
     const consumers = [];
@@ -138,4 +138,12 @@ const { map: mapPath, file } = cli.flags;
   } catch (err) {
     console.error(err);
   }
-})();
+}
+
+if (require.main) {
+  await stacktracify({ mapPath: mapPathFlag, file: fileFlag })
+}
+
+module.exports = {
+  stacktracify
+};
