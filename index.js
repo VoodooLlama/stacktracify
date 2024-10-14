@@ -55,43 +55,63 @@ const stacktracify = async ({ mapPath, file, debug = false }) => {
     if (!mapPath) cli.showHelp();
 
     try {
+      // support multiple source map declarations
       if (Array.isArray(mapPath)) {
         for (const m of mapPath) {
-          debug && console.log(`Loading ${m} as source map consumer!`)
+            if (debug) {
+              console.log(`Loading ${m} as source map consumer!`);
+            }
 
-          const file = await fs.readFile(m, "utf8");
+            const file = await fs.readFile(m, "utf8");
+            const mapContent = JSON.parse(file);
+            const smc = await new SourceMapConsumer(mapContent);
 
-          if (!file) return;
+            if (debug) {
+              console.log(`Loaded source map consumer for ${m}!`);
+            }
 
-          const mapContent = JSON.parse(file);
-          const smc = await new SourceMapConsumer(mapContent);
-
-          debug && console.log(`Loaded source map consumer for ${m}!`)
-
-          consumers.push(smc);
+            consumers.push(smc);
         }
 
-        debug && console.log('Loading source map consumers complete!');
+        if (debug) {
+          console.log(`Loaded ${consumers.length} source map consumers!`);
+        }
       } else {
         const mapContent = JSON.parse(await fs.readFile(mapPath, "utf-8"));
         const smc = await new SourceMapConsumer(mapContent);
 
+        promises.push(Promise.resolve);
+
         consumers.push(smc);
       }
     } catch (err) {
-      console.log("An error occurred loading source map consumers!", err, err.message);
+      console.error(err);
     }
-    // support multiple source map declarations
 
     if (!consumers?.length) {
-      throw new Error("Unable to resolve source map consumers!", consumers);
+      console.error("Unable to resolve source map consumers!", consumers);
+      return;
     }
 
     let str;
     if (file !== undefined) {
+      if (debug) {
+        console.log(`Reading stack trace as file from ${file}!`);
+      }
+
       str = await fs.readFile(file, "utf-8");
     } else {
+      if (debug) {
+        console.log(`Reading stack trace from clipboard!`);
+      }
       str = await clipboardy.read();
+    }
+
+    // naive check for stack trace in clipboard
+    if (!str?.length || !str.includes('at')) {
+      console.error('Unable to identify stack trace! Add a target file param or copy the stack trace to the clipboard!', str);
+
+      return;
     }
 
     function findPositionInAllSourceMaps(lookup) {
@@ -164,7 +184,7 @@ const stacktracify = async ({ mapPath, file, debug = false }) => {
 }
 
 if (require.main) {
-  stacktracify({ mapPath: mapPathFlag, file: fileFlag })
+  stacktracify({ mapPath: mapPathFlag, file: fileFlag, debug: debugFlag })
 }
 
 module.exports = {
