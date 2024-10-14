@@ -13,9 +13,11 @@ const cli = meow(
 
   Options
     --file, -f  (default is read from clipboard)
+    --map, -m   (target map paths)
+    --debug, -d (debug mode)
 
   Examples
-    $ stacktracify --map /path/to/js.map --file /path/to/my-stacktrace.txt
+    $ stacktracify --map /path/to/js.map --file /path/to/my-stacktrace.txt --debug
 `,
   {
     flags: {
@@ -28,29 +30,48 @@ const cli = meow(
         alias: "m",
         isMultiple: true,
       },
+      debug: {
+        type: "boolean",
+        alias: "d"
+      }
     },
   }
 );
 
-const { map: mapPathFlag, file: fileFlag } = cli.flags;
+const { map: mapPathFlag, file: fileFlag, debug: debugFlag } = cli.flags;
 
-const stacktracify = async ({ mapPath, file}) => {
+/**
+ * Writes an unminified stack trace to the console given a stack trace in a file or clipboard
+ * @param {Object}   params
+ * @param {string[]} params.mapPath Array of map file paths
+ * @param {string}   params.file    Target stack trace file to map
+ * @param {boolean}  params.debug   Enable debug logging
+ * @returns null
+ */
+const stacktracify = async ({ mapPath, file, debug = false }) => {
   try {
-    console.log(mapPath, file);
     const consumers = [];
     let preferredConsumerOrder = false;
     if (!mapPath) cli.showHelp();
 
     try {
       if (Array.isArray(mapPath)) {
-        await Promise.all(
-          mapPath.map(async (m) => {
-            const mapContent = JSON.parse(await fs.readFile(m, "utf-8"));
-            const smc = await new SourceMapConsumer(mapContent);
+        for (const m of mapPath) {
+          debug && console.log(`Loading ${m} as source map consumer!`)
 
-            consumers.push(smc);
-          })
-        );
+          const file = await fs.readFile(m, "utf8");
+
+          if (!file) return;
+
+          const mapContent = JSON.parse(file);
+          const smc = await new SourceMapConsumer(mapContent);
+
+          debug && console.log(`Loaded source map consumer for ${m}!`)
+
+          consumers.push(smc);
+        }
+
+        debug && console.log('Loading source map consumers complete!');
       } else {
         const mapContent = JSON.parse(await fs.readFile(mapPath, "utf-8"));
         const smc = await new SourceMapConsumer(mapContent);
@@ -58,12 +79,12 @@ const stacktracify = async ({ mapPath, file}) => {
         consumers.push(smc);
       }
     } catch (err) {
-      console.log("An error occurred loading source map consumers!", err);
+      console.log("An error occurred loading source map consumers!", err, err.message);
     }
     // support multiple source map declarations
 
     if (!consumers?.length) {
-      throw new Error("Unable to resolve source map consumer!");
+      throw new Error("Unable to resolve source map consumers!", consumers);
     }
 
     let str;
@@ -79,6 +100,8 @@ const stacktracify = async ({ mapPath, file}) => {
       let index = 0;
       for (const consumer of consumers) {
         const lookupValue = consumer.originalPositionFor(lookup);
+
+        debug && console.log(`Identifying source map consumer for lookup ${lookup}! ${lookupValue} result!`)
 
         if (lookupValue?.line) {
           if (!preferredConsumerOrder) {
@@ -141,7 +164,7 @@ const stacktracify = async ({ mapPath, file}) => {
 }
 
 if (require.main) {
-  await stacktracify({ mapPath: mapPathFlag, file: fileFlag })
+  stacktracify({ mapPath: mapPathFlag, file: fileFlag })
 }
 
 module.exports = {
